@@ -1,0 +1,19 @@
+# Keil MDK build outputs and local debug settings
+**/MDK-ARM/CtrlBoard-H7_*/
+**/MDK-ARM/CtrBoard-H7_*/
+**/MDK-ARM/DebugConfig/
+*.uvguix.*
+*.bak
+*.dep
+*.build_log.htm
+JLinkLog.txt
+
+# MATLAB/Simulink generated cache
+**/slprj/
+*.slxc
+*.autosave
+
+# OS and temporary files
+Thumbs.db
+Desktop.ini
+~$*
