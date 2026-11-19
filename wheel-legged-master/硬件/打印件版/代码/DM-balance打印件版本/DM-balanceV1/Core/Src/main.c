@@ -34,6 +34,7 @@
 #include "BMI088Middleware.h"
 #include "can_bsp.h"
 #include "dm4310_drv.h"
+#include "chassisR_task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -53,14 +54,13 @@
 /* 单电机模式下的电机编号：1~6 */
 #define MOTOR_TEST_ID         0x04
 
-/* 测试扭矩，单位N*m；仅在电机空载或整机可靠固定时使用 */
-#define MOTOR_TEST_TORQUE     0.50f
-#define MOTOR_TEST_MAX_TORQUE 0.50f
-
-/* 每次输出扭矩持续500ms，然后归零等待1000ms，共执行3次 */
-#define MOTOR_TEST_PULSE_MS   500U
-#define MOTOR_TEST_PAUSE_MS   1000U
-#define MOTOR_TEST_PULSES     3U
+/* 位置轨迹测试参数，使用MIT位置环，避免纯力矩被静摩擦吃掉 */
+#define MOTOR_TEST_KP             20.0f
+#define MOTOR_TEST_KD             2.0f
+#define MOTOR_TEST_SWEEP_SPEED    0.40f
+#define MOTOR_TEST_SWEEP_AMPLITUDE 0.35f
+#define MOTOR_TEST_DURATION_MS    5000U
+#define MOTOR_TEST_PERIOD_MS      10U
 
 /* USER CODE END PD */
 
@@ -72,7 +72,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+extern chassis_t chassis_move;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -81,6 +81,7 @@ void PeriphCommonClock_Config(void);
 void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
 #if MOTOR_TEST_MODE
+static motor_fbpara_t *MotorTest_GetFeedback(uint16_t motor_id);
 static void MotorTest_Run(void);
 #endif
 /* USER CODE END PFP */
@@ -252,14 +253,31 @@ void PeriphCommonClock_Config(void)
 /* USER CODE BEGIN 4 */
 
 #if MOTOR_TEST_MODE
+static motor_fbpara_t *MotorTest_GetFeedback(uint16_t motor_id)
+{
+  switch (motor_id)
+  {
+    case 0x01: return &chassis_move.joint_motor[0].para;
+    case 0x02: return &chassis_move.wheel_motor[0].para;
+    case 0x03: return &chassis_move.joint_motor[1].para;
+    case 0x04: return &chassis_move.joint_motor[2].para;
+    case 0x05: return &chassis_move.wheel_motor[1].para;
+    case 0x06: return &chassis_move.joint_motor[3].para;
+    default: return 0;
+  }
+}
+
 static void MotorTest_Run(void)
 {
   const uint16_t all_motor_ids[6] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
   uint16_t test_ids[6];
+  uint8_t motor_active[6] = {0U};
+  float start_pos[6] = {0.0f};
+  float target_pos[6] = {0.0f};
+  float direction[6] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
   uint8_t motor_count;
   hcan_t *hcan;
-  float target_torque = MOTOR_TEST_TORQUE;
-  uint32_t pulse;
+  motor_fbpara_t *feedback;
   uint32_t elapsed;
   uint8_t i;
   uint8_t m;
@@ -281,30 +299,21 @@ static void MotorTest_Run(void)
   test_ids[0] = MOTOR_TEST_ID;
 #endif
 
-  if (target_torque > MOTOR_TEST_MAX_TORQUE)
-  {
-    target_torque = MOTOR_TEST_MAX_TORQUE;
-  }
-  else if (target_torque < -MOTOR_TEST_MAX_TORQUE)
-  {
-    target_torque = -MOTOR_TEST_MAX_TORQUE;
-  }
-
   HAL_Delay(100U);
 
-  /* 使能当前选择的一台或六台电机，1~3号使用CAN1，4~6号使用CAN2 */
+  /* 逐个发送使能帧，确保每台电机都有足够的CAN处理时间 */
   for (i = 0U; i < 10U; i++)
   {
     for (m = 0U; m < motor_count; m++)
     {
       hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
       enable_motor_mode(hcan, test_ids[m], MIT_MODE);
+      HAL_Delay(1U);
     }
-    HAL_Delay(1U);
   }
 
-  /* 先保持零扭矩，确认使能帧和控制帧连续发送 */
-  for (i = 0U; i < 20U; i++)
+  /* 零扭矩运行500ms，让每个电机返回状态和当前位置 */
+  for (i = 0U; i < 50U; i++)
   {
     for (m = 0U; m < motor_count; m++)
     {
@@ -314,30 +323,84 @@ static void MotorTest_Run(void)
     HAL_Delay(10U);
   }
 
-  for (pulse = 0U; pulse < MOTOR_TEST_PULSES; pulse++)
+  /* 只对反馈状态为1的电机启用位置轨迹，未使能的电机继续发零扭矩 */
+  for (m = 0U; m < motor_count; m++)
   {
-    for (elapsed = 0U; elapsed < MOTOR_TEST_PULSE_MS; elapsed += 10U)
+    feedback = MotorTest_GetFeedback(test_ids[m]);
+    if ((feedback != 0) && (feedback->state == 1U))
     {
-      for (m = 0U; m < motor_count; m++)
-      {
-        hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
-        mit_ctrl(hcan, test_ids[m], 0.0f, 0.0f, 0.0f, 0.0f, target_torque);
-      }
-      HAL_Delay(10U);
-    }
-
-    for (elapsed = 0U; elapsed < MOTOR_TEST_PAUSE_MS; elapsed += 10U)
-    {
-      for (m = 0U; m < motor_count; m++)
-      {
-        hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
-        mit_ctrl(hcan, test_ids[m], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-      }
-      HAL_Delay(10U);
+      motor_active[m] = 1U;
+      start_pos[m] = feedback->pos;
+      target_pos[m] = feedback->pos;
     }
   }
 
-  /* 测试结束，全部归零并失能，不进入轮腿控制任务 */
+  /* 以各自初始位置为中心，缓慢往返，避免纯扭矩被静摩擦卡住 */
+  elapsed = 0U;
+  while (elapsed < MOTOR_TEST_DURATION_MS)
+  {
+    for (m = 0U; m < motor_count; m++)
+    {
+      hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
+
+      if (motor_active[m] != 0U)
+      {
+        float next_pos = target_pos[m] + direction[m] * MOTOR_TEST_SWEEP_SPEED * ((float)MOTOR_TEST_PERIOD_MS / 1000.0f);
+        float upper = start_pos[m] + MOTOR_TEST_SWEEP_AMPLITUDE;
+        float lower = start_pos[m] - MOTOR_TEST_SWEEP_AMPLITUDE;
+
+        if (upper > 11.5f)
+        {
+          upper = 11.5f;
+        }
+        if (lower < -11.5f)
+        {
+          lower = -11.5f;
+        }
+
+        if (next_pos >= upper)
+        {
+          next_pos = upper;
+          direction[m] = -1.0f;
+        }
+        else if (next_pos <= lower)
+        {
+          next_pos = lower;
+          direction[m] = 1.0f;
+        }
+
+        target_pos[m] = next_pos;
+        mit_ctrl(hcan, test_ids[m], target_pos[m], 0.0f, MOTOR_TEST_KP, MOTOR_TEST_KD, 0.0f);
+      }
+      else
+      {
+        mit_ctrl(hcan, test_ids[m], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+      }
+    }
+
+    HAL_Delay(MOTOR_TEST_PERIOD_MS);
+    elapsed += MOTOR_TEST_PERIOD_MS;
+  }
+
+  /* 返回起始位置，避免测试结束后突然丢力 */
+  for (i = 0U; i < 100U; i++)
+  {
+    for (m = 0U; m < motor_count; m++)
+    {
+      hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
+      if (motor_active[m] != 0U)
+      {
+        mit_ctrl(hcan, test_ids[m], start_pos[m], 0.0f, MOTOR_TEST_KP, MOTOR_TEST_KD, 0.0f);
+      }
+      else
+      {
+        mit_ctrl(hcan, test_ids[m], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+      }
+    }
+    HAL_Delay(10U);
+  }
+
+  /* 全部归零并失能，不进入轮腿控制任务 */
   for (i = 0U; i < 20U; i++)
   {
     for (m = 0U; m < motor_count; m++)
@@ -354,8 +417,8 @@ static void MotorTest_Run(void)
     {
       hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
       disable_motor_mode(hcan, test_ids[m], MIT_MODE);
+      HAL_Delay(1U);
     }
-    HAL_Delay(1U);
   }
 
   while (1)
