@@ -44,10 +44,13 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-/* 单电机测试模式：1 开启，0 恢复完整轮腿固件 */
+/* 电机测试模式：1 开启，0 恢复完整轮腿固件 */
 #define MOTOR_TEST_MODE       1
 
-/* 要测试的电机编号：1~6，2号线路修复前建议保持3 */
+/* 1 表示六台同时测试，0 表示只测试 MOTOR_TEST_ID 指定的电机 */
+#define MOTOR_TEST_ALL        1
+
+/* 单电机模式下的电机编号：1~6 */
 #define MOTOR_TEST_ID         0x04
 
 /* 测试扭矩，单位N*m；仅在电机空载或整机可靠固定时使用 */
@@ -251,18 +254,32 @@ void PeriphCommonClock_Config(void)
 #if MOTOR_TEST_MODE
 static void MotorTest_Run(void)
 {
+  const uint16_t all_motor_ids[6] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
+  uint16_t test_ids[6];
+  uint8_t motor_count;
   hcan_t *hcan;
   float target_torque = MOTOR_TEST_TORQUE;
   uint32_t pulse;
   uint32_t elapsed;
+  uint8_t i;
+  uint8_t m;
 
+#if MOTOR_TEST_ALL
+  motor_count = 6U;
+  for (i = 0U; i < motor_count; i++)
+  {
+    test_ids[i] = all_motor_ids[i];
+  }
+#else
   if ((MOTOR_TEST_ID < 0x01U) || (MOTOR_TEST_ID > 0x06U))
   {
     Error_Handler();
+    return;
   }
 
-  /* 1~3号使用CAN1，4~6号使用CAN2 */
-  hcan = (MOTOR_TEST_ID <= 0x03U) ? &hfdcan1 : &hfdcan2;
+  motor_count = 1U;
+  test_ids[0] = MOTOR_TEST_ID;
+#endif
 
   if (target_torque > MOTOR_TEST_MAX_TORQUE)
   {
@@ -275,17 +292,25 @@ static void MotorTest_Run(void)
 
   HAL_Delay(100U);
 
-  /* 只使能当前测试电机 */
-  for (int i = 0; i < 10; i++)
+  /* 使能当前选择的一台或六台电机，1~3号使用CAN1，4~6号使用CAN2 */
+  for (i = 0U; i < 10U; i++)
   {
-    enable_motor_mode(hcan, MOTOR_TEST_ID, MIT_MODE);
+    for (m = 0U; m < motor_count; m++)
+    {
+      hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
+      enable_motor_mode(hcan, test_ids[m], MIT_MODE);
+    }
     HAL_Delay(1U);
   }
 
-  /* 先保持零扭矩，确认使能帧连续发送 */
-  for (int i = 0; i < 20; i++)
+  /* 先保持零扭矩，确认使能帧和控制帧连续发送 */
+  for (i = 0U; i < 20U; i++)
   {
-    mit_ctrl(hcan, MOTOR_TEST_ID, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    for (m = 0U; m < motor_count; m++)
+    {
+      hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
+      mit_ctrl(hcan, test_ids[m], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    }
     HAL_Delay(10U);
   }
 
@@ -293,27 +318,43 @@ static void MotorTest_Run(void)
   {
     for (elapsed = 0U; elapsed < MOTOR_TEST_PULSE_MS; elapsed += 10U)
     {
-      mit_ctrl(hcan, MOTOR_TEST_ID, 0.0f, 0.0f, 0.0f, 0.0f, target_torque);
+      for (m = 0U; m < motor_count; m++)
+      {
+        hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
+        mit_ctrl(hcan, test_ids[m], 0.0f, 0.0f, 0.0f, 0.0f, target_torque);
+      }
       HAL_Delay(10U);
     }
 
     for (elapsed = 0U; elapsed < MOTOR_TEST_PAUSE_MS; elapsed += 10U)
     {
-      mit_ctrl(hcan, MOTOR_TEST_ID, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+      for (m = 0U; m < motor_count; m++)
+      {
+        hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
+        mit_ctrl(hcan, test_ids[m], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+      }
       HAL_Delay(10U);
     }
   }
 
-  /* 测试结束，归零并失能，不进入轮腿控制任务 */
-  for (int i = 0; i < 20; i++)
+  /* 测试结束，全部归零并失能，不进入轮腿控制任务 */
+  for (i = 0U; i < 20U; i++)
   {
-    mit_ctrl(hcan, MOTOR_TEST_ID, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    for (m = 0U; m < motor_count; m++)
+    {
+      hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
+      mit_ctrl(hcan, test_ids[m], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    }
     HAL_Delay(10U);
   }
 
-  for (int i = 0; i < 10; i++)
+  for (i = 0U; i < 10U; i++)
   {
-    disable_motor_mode(hcan, MOTOR_TEST_ID, MIT_MODE);
+    for (m = 0U; m < motor_count; m++)
+    {
+      hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
+      disable_motor_mode(hcan, test_ids[m], MIT_MODE);
+    }
     HAL_Delay(1U);
   }
 
