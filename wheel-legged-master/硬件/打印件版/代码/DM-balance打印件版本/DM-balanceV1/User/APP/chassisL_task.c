@@ -84,10 +84,10 @@ void ChassisL_init(chassis_t *chassis,vmc_leg_t *vmc,PidTypeDef *legl)
 {
   const static float legl_pid[3] = {LEG_PID_KP, LEG_PID_KI,LEG_PID_KD};
 
-	joint_motor_init(&chassis->joint_motor[2],6,MIT_MODE);//发送id为6
-	joint_motor_init(&chassis->joint_motor[3],8,MIT_MODE);//发送id为8
+	joint_motor_init(&chassis->joint_motor[2],0x04,MIT_MODE);//4号电机，左关节
+	joint_motor_init(&chassis->joint_motor[3],0x06,MIT_MODE);//6号电机，左关节
 	
-	wheel_motor_init(&chassis->wheel_motor[1],1,MIT_MODE);//发送id为1
+	wheel_motor_init(&chassis->wheel_motor[1],0x05,MIT_MODE);//5号电机，左轮毂
 	
 	VMC_init(vmc);//给杆长赋值
 	
