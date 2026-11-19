@@ -48,14 +48,14 @@
 #define MOTOR_TEST_MODE       1
 
 /* 要测试的电机编号：1~6，2号线路修复前建议保持3 */
-#define MOTOR_TEST_ID         0x03
+#define MOTOR_TEST_ID         0x04
 
-/* 测试扭矩，单位N*m；首次测试建议不超过0.1，绝不允许超过0.2 */
-#define MOTOR_TEST_TORQUE     0.10f
-#define MOTOR_TEST_MAX_TORQUE 0.20f
+/* 测试扭矩，单位N*m；仅在电机空载或整机可靠固定时使用 */
+#define MOTOR_TEST_TORQUE     0.50f
+#define MOTOR_TEST_MAX_TORQUE 0.50f
 
-/* 每次输出扭矩持续300ms，然后归零等待1000ms，共执行3次 */
-#define MOTOR_TEST_PULSE_MS   300U
+/* 每次输出扭矩持续500ms，然后归零等待1000ms，共执行3次 */
+#define MOTOR_TEST_PULSE_MS   500U
 #define MOTOR_TEST_PAUSE_MS   1000U
 #define MOTOR_TEST_PULSES     3U
 
