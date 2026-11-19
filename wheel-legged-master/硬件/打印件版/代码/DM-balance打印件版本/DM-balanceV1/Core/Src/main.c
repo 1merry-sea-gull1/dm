@@ -33,6 +33,7 @@
 #include "bsp_dwt.h"
 #include "BMI088Middleware.h"
 #include "can_bsp.h"
+#include "dm4310_drv.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,6 +43,21 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+/* 单电机测试模式：1 开启，0 恢复完整轮腿固件 */
+#define MOTOR_TEST_MODE       1
+
+/* 要测试的电机编号：1~6，2号线路修复前建议保持3 */
+#define MOTOR_TEST_ID         0x03
+
+/* 测试扭矩，单位N*m；首次测试建议不超过0.1，绝不允许超过0.2 */
+#define MOTOR_TEST_TORQUE     0.10f
+#define MOTOR_TEST_MAX_TORQUE 0.20f
+
+/* 每次输出扭矩持续300ms，然后归零等待1000ms，共执行3次 */
+#define MOTOR_TEST_PULSE_MS   300U
+#define MOTOR_TEST_PAUSE_MS   1000U
+#define MOTOR_TEST_PULSES     3U
 
 /* USER CODE END PD */
 
@@ -61,7 +77,9 @@ void SystemClock_Config(void);
 void PeriphCommonClock_Config(void);
 void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
-
+#if MOTOR_TEST_MODE
+static void MotorTest_Run(void);
+#endif
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -119,6 +137,10 @@ int main(void)
 	
   FDCAN1_Config();//can过滤器初始化
 	FDCAN2_Config();
+
+#if MOTOR_TEST_MODE
+  MotorTest_Run();
+#endif
   /* USER CODE END 2 */
 
   /* Call init function for freertos objects (in freertos.c) */
@@ -225,6 +247,82 @@ void PeriphCommonClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+#if MOTOR_TEST_MODE
+static void MotorTest_Run(void)
+{
+  hcan_t *hcan;
+  float target_torque = MOTOR_TEST_TORQUE;
+  uint32_t pulse;
+  uint32_t elapsed;
+
+  if ((MOTOR_TEST_ID < 0x01U) || (MOTOR_TEST_ID > 0x06U))
+  {
+    Error_Handler();
+  }
+
+  /* 1~3号使用CAN1，4~6号使用CAN2 */
+  hcan = (MOTOR_TEST_ID <= 0x03U) ? &hfdcan1 : &hfdcan2;
+
+  if (target_torque > MOTOR_TEST_MAX_TORQUE)
+  {
+    target_torque = MOTOR_TEST_MAX_TORQUE;
+  }
+  else if (target_torque < -MOTOR_TEST_MAX_TORQUE)
+  {
+    target_torque = -MOTOR_TEST_MAX_TORQUE;
+  }
+
+  HAL_Delay(100U);
+
+  /* 只使能当前测试电机 */
+  for (int i = 0; i < 10; i++)
+  {
+    enable_motor_mode(hcan, MOTOR_TEST_ID, MIT_MODE);
+    HAL_Delay(1U);
+  }
+
+  /* 先保持零扭矩，确认使能帧连续发送 */
+  for (int i = 0; i < 20; i++)
+  {
+    mit_ctrl(hcan, MOTOR_TEST_ID, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    HAL_Delay(10U);
+  }
+
+  for (pulse = 0U; pulse < MOTOR_TEST_PULSES; pulse++)
+  {
+    for (elapsed = 0U; elapsed < MOTOR_TEST_PULSE_MS; elapsed += 10U)
+    {
+      mit_ctrl(hcan, MOTOR_TEST_ID, 0.0f, 0.0f, 0.0f, 0.0f, target_torque);
+      HAL_Delay(10U);
+    }
+
+    for (elapsed = 0U; elapsed < MOTOR_TEST_PAUSE_MS; elapsed += 10U)
+    {
+      mit_ctrl(hcan, MOTOR_TEST_ID, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+      HAL_Delay(10U);
+    }
+  }
+
+  /* 测试结束，归零并失能，不进入轮腿控制任务 */
+  for (int i = 0; i < 20; i++)
+  {
+    mit_ctrl(hcan, MOTOR_TEST_ID, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    HAL_Delay(10U);
+  }
+
+  for (int i = 0; i < 10; i++)
+  {
+    disable_motor_mode(hcan, MOTOR_TEST_ID, MIT_MODE);
+    HAL_Delay(1U);
+  }
+
+  while (1)
+  {
+    HAL_Delay(1000U);
+  }
+}
+#endif
 
 /* USER CODE END 4 */
 
