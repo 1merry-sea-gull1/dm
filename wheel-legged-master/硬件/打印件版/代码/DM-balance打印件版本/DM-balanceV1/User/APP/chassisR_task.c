@@ -1,7 +1,7 @@
 /**
   *********************************************************************
   * @file      chassisR_task.c/h
-  * @brief     该任务控制右半部分的电机，分别是两个DM4310和一个DM6215，这三个电机挂载在can1总线上
+  * @brief     该任务控制右半部分的电机，分别是三个DM4310，这三个电机挂载在can1总线上
 	*						 从底盘上往下看，右上角的DM4310发送id为6、接收id为3，
 	*						 右下角的DM4310发送id为8、接收id为4，
 	*						 右边DM轮毂电机发送id为1、接收id为0。
@@ -105,7 +105,7 @@ void ChassisR_task(void)
 			osDelay(CHASSR_TIME);
 			mit_ctrl(&hfdcan1,chassis_move.joint_motor[0].para.id, 0.0f, 0.0f,0.0f, 0.0f,right.torque_set[0]);//right.torque_set[0]
 			osDelay(CHASSR_TIME);
-			mit_ctrl2(&hfdcan1,chassis_move.wheel_motor[0].para.id, 0.0f, 0.0f,0.0f, 0.0f, chassis_move.wheel_motor[0].wheel_T);//右边轮毂电机
+			mit_ctrl(&hfdcan1,chassis_move.wheel_motor[0].para.id, 0.0f, 0.0f,0.0f, 0.0f, chassis_move.wheel_motor[0].wheel_T);//右边轮毂电机
 			osDelay(CHASSR_TIME);
 		}
 		else if(chassis_move.start_flag==0)	
@@ -114,7 +114,7 @@ void ChassisR_task(void)
 			osDelay(CHASSR_TIME);
 			mit_ctrl(&hfdcan1,chassis_move.joint_motor[0].para.id, 0.0f, 0.0f,0.0f, 0.0f,0.0f);//right.torque_set[0]
 			osDelay(CHASSR_TIME);
-			mit_ctrl2(&hfdcan1,chassis_move.wheel_motor[0].para.id, 0.0f, 0.0f,0.0f, 0.0f,0.0f);//右边轮毂电机	
+			mit_ctrl(&hfdcan1,chassis_move.wheel_motor[0].para.id, 0.0f, 0.0f,0.0f, 0.0f,0.0f);//右边轮毂电机
 			osDelay(CHASSR_TIME);
 		}
 	

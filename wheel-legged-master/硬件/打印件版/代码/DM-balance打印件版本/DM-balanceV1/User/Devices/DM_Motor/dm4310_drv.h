@@ -19,17 +19,6 @@
 #define T_MIN -10.0f
 #define T_MAX 10.0f
 
-#define P_MIN2 -12.0f
-#define P_MAX2 12.0f
-#define V_MIN2 -45.0f
-#define V_MAX2 45.0f
-#define KP_MIN2 0.0f
-#define KP_MAX2 500.0f
-#define KD_MIN2 0.0f
-#define KD_MAX2 5.0f
-#define T_MIN2 -18.0f
-#define T_MAX2 18.0f
-
 typedef struct 
 {
 	uint16_t id;
@@ -65,18 +54,15 @@ typedef struct
 
 
 extern void dm4310_fbdata(Joint_Motor_t *motor, uint8_t *rx_data,uint32_t data_len);
-extern void dm6215_fbdata(Wheel_Motor_t *motor, uint8_t *rx_data,uint32_t data_len);
+extern void dm4310_wheel_fbdata(Wheel_Motor_t *motor, uint8_t *rx_data,uint32_t data_len);
 
 extern void enable_motor_mode(hcan_t* hcan, uint16_t motor_id, uint16_t mode_id);
 extern void disable_motor_mode(hcan_t* hcan, uint16_t motor_id, uint16_t mode_id);
 
-//关节电机
+//DM4310电机控制
 extern void mit_ctrl(hcan_t* hcan, uint16_t motor_id, float pos, float vel,float kp, float kd, float torq);
 extern void pos_speed_ctrl(hcan_t* hcan,uint16_t motor_id, float pos, float vel);
 extern void speed_ctrl(hcan_t* hcan,uint16_t motor_id, float _vel);
-
-//轮毂电机MIT模式发送命令
-extern void mit_ctrl2(hcan_t* hcan, uint16_t motor_id, float pos, float vel,float kp, float kd, float torq);
 
 extern void joint_motor_init(Joint_Motor_t *motor,uint16_t id,uint16_t mode);
 extern void wheel_motor_init(Wheel_Motor_t *motor,uint16_t id,uint16_t mode);

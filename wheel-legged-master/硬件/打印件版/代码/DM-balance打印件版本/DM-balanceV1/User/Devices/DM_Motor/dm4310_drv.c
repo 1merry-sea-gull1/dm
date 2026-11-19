@@ -64,48 +64,38 @@ void wheel_motor_init(Wheel_Motor_t *motor,uint16_t id,uint16_t mode)
 
 /**
 ************************************************************************
-* @brief:      	dm4310_fbdata: 获取DM4310电机反馈数据函数
-* @param[in]:   motor:    指向motor_t结构的指针，包含电机相关信息和反馈数据
+* @brief:      	解码DM4310电机的8字节反馈帧
+* @param[in]:   para:     指向电机反馈参数的指针
 * @param[in]:   rx_data:  指向包含反馈数据的数组指针
 * @param[in]:   data_len: 数据长度
 * @retval:     	void
-* @details:    	从接收到的数据中提取DM4310电机的反馈信息，包括电机ID、
-*               状态、位置、速度、扭矩相关温度参数、寄存器数据等
 ************************************************************************
 **/
-void dm4310_fbdata(Joint_Motor_t *motor, uint8_t *rx_data,uint32_t data_len)
-{ 
+static void dm4310_para_fbdata(motor_fbpara_t *para, uint8_t *rx_data,uint32_t data_len)
+{
 	if(data_len==FDCAN_DLC_BYTES_8)
 	{//返回的数据有8个字节
-	  motor->para.id = (rx_data[0])&0x0F;
-	  motor->para.state = (rx_data[0])>>4;
-	  motor->para.p_int=(rx_data[1]<<8)|rx_data[2];
-	  motor->para.v_int=(rx_data[3]<<4)|(rx_data[4]>>4);
-	  motor->para.t_int=((rx_data[4]&0xF)<<8)|rx_data[5];
-	  motor->para.pos = uint_to_float(motor->para.p_int, P_MIN, P_MAX, 16); // (-12.5,12.5)
-	  motor->para.vel = uint_to_float(motor->para.v_int, V_MIN, V_MAX, 12); // (-30.0,30.0)
-	  motor->para.tor = uint_to_float(motor->para.t_int, T_MIN, T_MAX, 12);  // (-10.0,10.0)
-	  motor->para.Tmos = (float)(rx_data[6]);
-	  motor->para.Tcoil = (float)(rx_data[7]);
+	  para->id = (rx_data[0])&0x0F;
+	  para->state = (rx_data[0])>>4;
+	  para->p_int=(rx_data[1]<<8)|rx_data[2];
+	  para->v_int=(rx_data[3]<<4)|(rx_data[4]>>4);
+	  para->t_int=((rx_data[4]&0xF)<<8)|rx_data[5];
+	  para->pos = uint_to_float(para->p_int, P_MIN, P_MAX, 16); // (-12.5,12.5)
+	  para->vel = uint_to_float(para->v_int, V_MIN, V_MAX, 12); // (-30.0,30.0)
+	  para->tor = uint_to_float(para->t_int, T_MIN, T_MAX, 12);  // (-10.0,10.0)
+	  para->Tmos = (float)(rx_data[6]);
+	  para->Tcoil = (float)(rx_data[7]);
 	}
 }
 
+void dm4310_fbdata(Joint_Motor_t *motor, uint8_t *rx_data,uint32_t data_len)
+{
+	dm4310_para_fbdata(&motor->para, rx_data, data_len);
+}
 
-void dm6215_fbdata(Wheel_Motor_t *motor, uint8_t *rx_data,uint32_t data_len)
-{ 
-	if(data_len==FDCAN_DLC_BYTES_8)
-	{//返回的数据有8个字节
-	  motor->para.id = (rx_data[0])&0x0F;
-	  motor->para.state = (rx_data[0])>>4;
-	  motor->para.p_int=(rx_data[1]<<8)|rx_data[2];
-	  motor->para.v_int=(rx_data[3]<<4)|(rx_data[4]>>4);
-	  motor->para.t_int=((rx_data[4]&0xF)<<8)|rx_data[5];
-	  motor->para.pos = uint_to_float(motor->para.p_int, P_MIN2, P_MAX2, 16); // (-12.0,12.0)
-	  motor->para.vel = uint_to_float(motor->para.v_int, V_MIN2, V_MAX2, 12); // (-30.0,30.0)
-	  motor->para.tor = uint_to_float(motor->para.t_int, T_MIN2, T_MAX2, 12);  // (-18.0,18.0)
-	  motor->para.Tmos = (float)(rx_data[6]);
-	  motor->para.Tcoil = (float)(rx_data[7]);
-	}
+void dm4310_wheel_fbdata(Wheel_Motor_t *motor, uint8_t *rx_data,uint32_t data_len)
+{
+	dm4310_para_fbdata(&motor->para, rx_data, data_len);
 }
 
 
@@ -247,31 +237,3 @@ void speed_ctrl(hcan_t* hcan,uint16_t motor_id, float vel)
 	
 	canx_send_data(hcan, id, data, 4);
 }
-
-
-
-void mit_ctrl2(hcan_t* hcan, uint16_t motor_id, float pos, float vel,float kp, float kd, float torq)
-{
-	uint8_t data[8];
-	uint16_t pos_tmp,vel_tmp,kp_tmp,kd_tmp,tor_tmp;
-	uint16_t id = motor_id + MIT_MODE;
-
-	pos_tmp = float_to_uint(pos,  P_MIN2,  P_MAX2,  16);
-	vel_tmp = float_to_uint(vel,  V_MIN2,  V_MAX2,  12);
-	kp_tmp  = float_to_uint(kp,   KP_MIN2, KP_MAX2, 12);
-	kd_tmp  = float_to_uint(kd,   KD_MIN2, KD_MAX2, 12);
-	tor_tmp = float_to_uint(torq, T_MIN2,  T_MAX2,  12);
-
-	data[0] = (pos_tmp >> 8);
-	data[1] = pos_tmp;
-	data[2] = (vel_tmp >> 4);
-	data[3] = ((vel_tmp&0xF)<<4)|(kp_tmp>>8);
-	data[4] = kp_tmp;
-	data[5] = (kd_tmp >> 4);
-	data[6] = ((kd_tmp&0xF)<<4)|(tor_tmp>>8);
-	data[7] = tor_tmp;
-	
-	canx_send_data(hcan, id, data, 8);
-}
-
-
