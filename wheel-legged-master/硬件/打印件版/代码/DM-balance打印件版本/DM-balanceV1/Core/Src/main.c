@@ -48,11 +48,18 @@
 /* 电机测试模式：1 开启，0 恢复完整轮腿固件 */
 #define MOTOR_TEST_MODE       1
 
-/* 1 表示六台同时测试，0 表示只测试 MOTOR_TEST_ID 指定的电机 */
-#define MOTOR_TEST_ALL        1
-
-/* 单电机模式下的电机编号：1~6 */
-#define MOTOR_TEST_ID         0x04
+/*
+ * 每行控制一台电机：
+ *   保留 #define：该电机参与测试
+ *   注释掉该行：完全跳过该电机
+ * 2号电机线路修复前，可以注释掉 MOTOR_TEST_2_ENABLE。
+ */
+#define MOTOR_TEST_1_ENABLE
+#define MOTOR_TEST_2_ENABLE
+#define MOTOR_TEST_3_ENABLE
+#define MOTOR_TEST_4_ENABLE
+#define MOTOR_TEST_5_ENABLE
+#define MOTOR_TEST_6_ENABLE
 
 /* 位置轨迹测试参数，使用MIT位置环，避免纯力矩被静摩擦吃掉 */
 #define MOTOR_TEST_KP             20.0f
@@ -269,7 +276,6 @@ static motor_fbpara_t *MotorTest_GetFeedback(uint16_t motor_id)
 
 static void MotorTest_Run(void)
 {
-  const uint16_t all_motor_ids[6] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
   uint16_t test_ids[6];
   uint8_t motor_active[6] = {0U};
   float start_pos[6] = {0.0f};
@@ -282,22 +288,34 @@ static void MotorTest_Run(void)
   uint8_t i;
   uint8_t m;
 
-#if MOTOR_TEST_ALL
-  motor_count = 6U;
-  for (i = 0U; i < motor_count; i++)
-  {
-    test_ids[i] = all_motor_ids[i];
-  }
-#else
-  if ((MOTOR_TEST_ID < 0x01U) || (MOTOR_TEST_ID > 0x06U))
-  {
-    Error_Handler();
-    return;
-  }
+  motor_count = 0U;
 
-  motor_count = 1U;
-  test_ids[0] = MOTOR_TEST_ID;
+#ifdef MOTOR_TEST_1_ENABLE
+  test_ids[motor_count++] = 0x01U;
 #endif
+#ifdef MOTOR_TEST_2_ENABLE
+  test_ids[motor_count++] = 0x02U;
+#endif
+#ifdef MOTOR_TEST_3_ENABLE
+  test_ids[motor_count++] = 0x03U;
+#endif
+#ifdef MOTOR_TEST_4_ENABLE
+  test_ids[motor_count++] = 0x04U;
+#endif
+#ifdef MOTOR_TEST_5_ENABLE
+  test_ids[motor_count++] = 0x05U;
+#endif
+#ifdef MOTOR_TEST_6_ENABLE
+  test_ids[motor_count++] = 0x06U;
+#endif
+
+  if (motor_count == 0U)
+  {
+    while (1)
+    {
+      HAL_Delay(1000U);
+    }
+  }
 
   HAL_Delay(100U);
 
