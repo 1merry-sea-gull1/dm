@@ -2,7 +2,7 @@
 
 DM-MC02 六电机调试上位机第一版。
 
-当前阶段是 **PC 端界面 + 协议层 + 模拟器**。DM-MC02 的 USB CDC 桥接固件还没有写入仓库，所以连接真实电机前必须先完成桥接固件。
+当前阶段是 **PC 端界面 + 协议层 + USB CDC 桥接固件 + 模拟器**。桥接固件已经能通过 `COM` 口转发 CAN，并完成 PING 和 CAN 反馈联调。
 
 ## 启动软件
 
@@ -62,14 +62,28 @@ DM-MC02 桥接固件
 DM4310 电机
 ```
 
-桥接固件需要实现：
+桥接固件工程：
 
-- USB CDC 虚拟串口
-- `protocol.py` 中的帧协议和 CRC16
-- CAN1/CAN2 原始帧转发
-- MCU 参数 flash 保存
+```text
+dm-mc02-master/例程/CtrBoard-H7_USB/MDK-ARM/CtrBoard-H7_USB.uvprojx
+```
 
-在桥接固件完成前，串口模式无法控制电机。
+已经实现：
+
+- USB CDC 虚拟串口，Windows 识别为 `USB 串行设备 (COMx)`
+- `protocol.py` 中的帧格式和 CRC16
+- `PING` / `ACK`
+- `CAN_TX` / `CAN_RX`，CAN1/CAN2 各 1 Mbps
+- CAN 事件流开关 `CAN_STREAM_START` / `CAN_STREAM_STOP`
+- 已验证通过 `COM7` 收到 4 号电机 `0x14` 的 8 字节反馈
+
+尚未实现：
+
+- 电机寄存器参数页面和 MCU 参数持久化
+- `MOTOR_PARAM_READ/WRITE`、`MCU_CONFIG_GET/SET/SAVE`
+- 与轮腿正式固件的合并
+
+桥接固件是独立的调试固件，不会自动使能或转动电机。真实控制仍由上位机发出的 CAN 帧决定。
 
 ## 协议
 
@@ -113,12 +127,12 @@ bus u8 | can_id u32 | flags u8 | dlc u8 | data[8] | timestamp_ms u32
 
 ## 下一步
 
-1. 在 DM-balanceV1 上增加 USB CDC 和维护任务。
-2. 实现 PING、CAN_TX、CAN_RX。
-3. 联调模拟器与真实桥接。
-4. 实现电机参数读写页面。
-5. 实现 MCU 参数 Flash 保存。
-6. 打包 `MotorTuner.exe`。
+1. 用真实串口连接桥接固件，先完成六电机反馈检查。
+2. 增加电机寄存器读取/写入页面。
+3. 实现 MCU 参数 GET/SET/SAVE 和内部 Flash 持久化。
+4. 增加通信超时、错误状态和写参数确认。
+5. 打包 `MotorTuner.exe`。
+6. 将桥接和维护功能合并进正式轮腿固件，或保留为独立调试固件。
 
 ## 安全限制
 
