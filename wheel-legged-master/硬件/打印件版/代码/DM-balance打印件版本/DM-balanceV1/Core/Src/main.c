@@ -64,10 +64,16 @@
 /* 位置轨迹测试参数，使用MIT位置环，避免纯力矩被静摩擦吃掉 */
 #define MOTOR_TEST_KP             20.0f
 #define MOTOR_TEST_KD             2.0f
-#define MOTOR_TEST_SWEEP_SPEED    0.40f
+#define MOTOR_TEST_SWEEP_SPEED    0.60f
 #define MOTOR_TEST_SWEEP_AMPLITUDE 0.35f
 #define MOTOR_TEST_DURATION_MS    5000U
 #define MOTOR_TEST_PERIOD_MS      10U
+
+/* 测试结束后平滑返回和缓慢卸力，避免归零瞬间抽动 */
+#define MOTOR_TEST_RETURN_SPEED   0.20f
+#define MOTOR_TEST_RETURN_MS      3000U
+#define MOTOR_TEST_HOLD_MS        500U
+#define MOTOR_TEST_RELEASE_MS     500U
 
 /* USER CODE END PD */
 
@@ -400,8 +406,42 @@ static void MotorTest_Run(void)
     elapsed += MOTOR_TEST_PERIOD_MS;
   }
 
-  /* 返回起始位置，避免测试结束后突然丢力 */
-  for (i = 0U; i < 100U; i++)
+  /* 以较低速度平滑返回起始位置，避免目标位置突然跳变 */
+  for (elapsed = 0U; elapsed < MOTOR_TEST_RETURN_MS; elapsed += MOTOR_TEST_PERIOD_MS)
+  {
+    for (m = 0U; m < motor_count; m++)
+    {
+      hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
+
+      if (motor_active[m] != 0U)
+      {
+        float return_step = MOTOR_TEST_RETURN_SPEED * ((float)MOTOR_TEST_PERIOD_MS / 1000.0f);
+
+        if (target_pos[m] > (start_pos[m] + return_step))
+        {
+          target_pos[m] -= return_step;
+        }
+        else if (target_pos[m] < (start_pos[m] - return_step))
+        {
+          target_pos[m] += return_step;
+        }
+        else
+        {
+          target_pos[m] = start_pos[m];
+        }
+
+        mit_ctrl(hcan, test_ids[m], target_pos[m], 0.0f, MOTOR_TEST_KP, MOTOR_TEST_KD, 0.0f);
+      }
+      else
+      {
+        mit_ctrl(hcan, test_ids[m], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+      }
+    }
+    HAL_Delay(MOTOR_TEST_PERIOD_MS);
+  }
+
+  /* 在起始位置保持一段时间，让机械振动和背隙收敛 */
+  for (i = 0U; i < (MOTOR_TEST_HOLD_MS / MOTOR_TEST_PERIOD_MS); i++)
   {
     for (m = 0U; m < motor_count; m++)
     {
@@ -415,7 +455,30 @@ static void MotorTest_Run(void)
         mit_ctrl(hcan, test_ids[m], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
       }
     }
-    HAL_Delay(10U);
+    HAL_Delay(MOTOR_TEST_PERIOD_MS);
+  }
+
+  /* 逐渐降低Kp和Kd卸载保持力，避免突然失能造成抽动 */
+  for (i = 0U; i < (MOTOR_TEST_RELEASE_MS / MOTOR_TEST_PERIOD_MS); i++)
+  {
+    float release_scale = 1.0f - ((float)(i * MOTOR_TEST_PERIOD_MS) / (float)MOTOR_TEST_RELEASE_MS);
+
+    for (m = 0U; m < motor_count; m++)
+    {
+      hcan = (test_ids[m] <= 0x03U) ? &hfdcan1 : &hfdcan2;
+      if (motor_active[m] != 0U)
+      {
+        mit_ctrl(hcan, test_ids[m], start_pos[m], 0.0f,
+                 MOTOR_TEST_KP * release_scale,
+                 MOTOR_TEST_KD * release_scale,
+                 0.0f);
+      }
+      else
+      {
+        mit_ctrl(hcan, test_ids[m], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+      }
+    }
+    HAL_Delay(MOTOR_TEST_PERIOD_MS);
   }
 
   /* 全部归零并失能，不进入轮腿控制任务 */
