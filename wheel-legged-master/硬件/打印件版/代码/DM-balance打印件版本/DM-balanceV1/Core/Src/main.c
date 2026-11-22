@@ -1,4 +1,4 @@
-/* USER CODE BEGIN Header */
+﻿/* USER CODE BEGIN Header */
 /**
   ******************************************************************************
   * @file           : main.c
@@ -45,14 +45,14 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-/* �������ģʽ��1 ������0 �ָ��������ȹ̼� */
+/* 电机测试模式：1 开启，0 恢复完整轮腿固件 */
 #define MOTOR_TEST_MODE       1
 
 /*
- * ÿ�п���һ̨�����
- *   ���� #define���õ���������
- *   ע�͵����У���ȫ�����õ��
- * 2�ŵ����·�޸�ǰ������ע�͵� MOTOR_TEST_2_ENABLE��
+ * 每行控制一台电机：
+ *   保留 #define：该电机参与测试
+ *   注释掉该行：完全跳过该电机
+ * 2号电机线路修复前，可以注释掉 MOTOR_TEST_2_ENABLE。
  */
 #define MOTOR_TEST_1_ENABLE
 #define MOTOR_TEST_2_ENABLE
@@ -61,7 +61,7 @@
 #define MOTOR_TEST_5_ENABLE
 #define MOTOR_TEST_6_ENABLE
 
-/* λ�ù켣���Բ�����ʹ��MITλ�û������ⴿ���ر���Ħ���Ե� */
+/* 位置轨迹测试参数，使用MIT位置环，避免纯力矩被静摩擦吃掉 */
 #define MOTOR_TEST_KP             20.0f
 #define MOTOR_TEST_KD             2.0f
 #define MOTOR_TEST_SWEEP_SPEED    0.60f
@@ -69,7 +69,7 @@
 #define MOTOR_TEST_DURATION_MS    5000U
 #define MOTOR_TEST_PERIOD_MS      10U
 
-/* ���Խ�����ƽ�����غͻ���ж�����������˲��鶯 */
+/* 测试结束后平滑返回和缓慢卸力，避免归零瞬间抽动 */
 #define MOTOR_TEST_RETURN_SPEED   0.20f
 #define MOTOR_TEST_RETURN_MS      3000U
 #define MOTOR_TEST_HOLD_MS        500U
@@ -144,15 +144,15 @@ int main(void)
   /* USER CODE BEGIN 2 */
 	DWT_Init(480);
   
-    /* BMI088��ʼ�� */
+    /* BMI088初始化 */
   while (BMI088_init(&hspi2, 0) != BMI088_NO_ERROR)
 	{
 	  ;
 	}
-	Power_OUT1_ON;//imu��ʼ����ɣ��ɿص�Դ�򿪣�led����
+	Power_OUT1_ON;//imu初始化完成，可控电源打开，led灯亮
 	Power_OUT2_ON;
 	
-  FDCAN1_Config();//can��������ʼ��
+  FDCAN1_Config();//can过滤器初始化
 	FDCAN2_Config();
 
 #if MOTOR_TEST_MODE
@@ -325,7 +325,7 @@ static void MotorTest_Run(void)
 
   HAL_Delay(100U);
 
-  /* �������ʹ��֡��ȷ��ÿ̨��������㹻��CAN����ʱ�� */
+  /* 逐个发送使能帧，确保每台电机都有足够的CAN处理时间 */
   for (i = 0U; i < 10U; i++)
   {
     for (m = 0U; m < motor_count; m++)
@@ -336,7 +336,7 @@ static void MotorTest_Run(void)
     }
   }
 
-  /* ��Ť������500ms����ÿ���������״̬�͵�ǰλ�� */
+  /* 零扭矩运行500ms，让每个电机返回状态和当前位置 */
   for (i = 0U; i < 50U; i++)
   {
     for (m = 0U; m < motor_count; m++)
@@ -347,7 +347,7 @@ static void MotorTest_Run(void)
     HAL_Delay(10U);
   }
 
-  /* ֻ�Է���״̬Ϊ1�ĵ������λ�ù켣��δʹ�ܵĵ����������Ť�� */
+  /* 只对反馈状态为1的电机启用位置轨迹，未使能的电机继续发零扭矩 */
   for (m = 0U; m < motor_count; m++)
   {
     feedback = MotorTest_GetFeedback(test_ids[m]);
@@ -359,7 +359,7 @@ static void MotorTest_Run(void)
     }
   }
 
-  /* �Ը��Գ�ʼλ��Ϊ���ģ��������������ⴿŤ�ر���Ħ����ס */
+  /* 以各自初始位置为中心，缓慢往返，避免纯扭矩被静摩擦卡住 */
   elapsed = 0U;
   while (elapsed < MOTOR_TEST_DURATION_MS)
   {
@@ -406,7 +406,7 @@ static void MotorTest_Run(void)
     elapsed += MOTOR_TEST_PERIOD_MS;
   }
 
-  /* �Խϵ��ٶ�ƽ��������ʼλ�ã�����Ŀ��λ��ͻȻ���� */
+  /* 以较低速度平滑返回起始位置，避免目标位置突然跳变 */
   for (elapsed = 0U; elapsed < MOTOR_TEST_RETURN_MS; elapsed += MOTOR_TEST_PERIOD_MS)
   {
     for (m = 0U; m < motor_count; m++)
@@ -440,7 +440,7 @@ static void MotorTest_Run(void)
     HAL_Delay(MOTOR_TEST_PERIOD_MS);
   }
 
-  /* ����ʼλ�ñ���һ��ʱ�䣬�û�е�񶯺ͱ�϶���� */
+  /* 在起始位置保持一段时间，让机械振动和背隙收敛 */
   for (i = 0U; i < (MOTOR_TEST_HOLD_MS / MOTOR_TEST_PERIOD_MS); i++)
   {
     for (m = 0U; m < motor_count; m++)
@@ -458,7 +458,7 @@ static void MotorTest_Run(void)
     HAL_Delay(MOTOR_TEST_PERIOD_MS);
   }
 
-  /* �𽥽���Kp��Kdж�ر�����������ͻȻʧ����ɳ鶯 */
+  /* 逐渐降低Kp和Kd卸载保持力，避免突然失能造成抽动 */
   for (i = 0U; i < (MOTOR_TEST_RELEASE_MS / MOTOR_TEST_PERIOD_MS); i++)
   {
     float release_scale = 1.0f - ((float)(i * MOTOR_TEST_PERIOD_MS) / (float)MOTOR_TEST_RELEASE_MS);
@@ -481,7 +481,7 @@ static void MotorTest_Run(void)
     HAL_Delay(MOTOR_TEST_PERIOD_MS);
   }
 
-  /* ȫ�����㲢ʧ�ܣ����������ȿ������� */
+  /* 全部归零并失能，不进入轮腿控制任务 */
   for (i = 0U; i < 20U; i++)
   {
     for (m = 0U; m < motor_count; m++)
